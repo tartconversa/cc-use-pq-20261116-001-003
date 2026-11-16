@@ -48,6 +48,23 @@ class BatchIn(BaseModel):
     events: list[Any]
 
 
+class BatchOpenIn(BaseModel):
+    source_id: str
+    contract_id: str
+    request_key: str
+    expected_rows: int | None = None
+    expected_payload_hash: str | None = None
+
+
+class SegmentIn(BaseModel):
+    segment_no: int
+    events: list[Any]
+
+
+class AbandonBatchIn(BaseModel):
+    reason: str | None = None
+
+
 class StageIn(BaseModel):
     venue_id: str
     local_day: str
@@ -109,6 +126,32 @@ def create_app(database: str | None = None) -> FastAPI:
     @app.post("/batches", status_code=201)
     def batch(data: BatchIn):
         return lake.ingest(data.source_id, data.contract_id, data.request_key, data.events)
+
+    @app.post("/batches/open", status_code=201)
+    def open_batch(data: BatchOpenIn):
+        return lake.open_batch(data.source_id, data.contract_id, data.request_key,
+                               expected_rows=data.expected_rows,
+                               expected_payload_hash=data.expected_payload_hash)
+
+    @app.post("/batches/{batch_id}/segments", status_code=201)
+    def append_segment(batch_id: str, data: SegmentIn):
+        return lake.append_segment(batch_id, data.segment_no, data.events)
+
+    @app.post("/batches/{batch_id}/seal")
+    def seal_batch(batch_id: str):
+        return lake.seal_batch(batch_id)
+
+    @app.post("/batches/{batch_id}/abandon")
+    def abandon_batch(batch_id: str, data: AbandonBatchIn | None = None):
+        return lake.abandon_batch(batch_id, data.reason if data else None)
+
+    @app.get("/batches/{batch_id}/pending")
+    def batch_pending(batch_id: str):
+        return lake.batch_pending(batch_id)
+
+    @app.get("/batches/unfinished")
+    def unfinished_batches(source_id: str | None = None):
+        return lake.unfinished_batches(source_id)
 
     @app.post("/batches/preview")
     def preview_batch(data: BatchIn):

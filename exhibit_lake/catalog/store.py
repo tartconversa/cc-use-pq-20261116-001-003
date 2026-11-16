@@ -57,6 +57,26 @@ CREATE TABLE IF NOT EXISTS rejected_rows (
     code TEXT NOT NULL, detail TEXT NOT NULL,
     PRIMARY KEY(batch_id,row_no)
 );
+CREATE TABLE IF NOT EXISTS batch_segments (
+    batch_id TEXT NOT NULL REFERENCES batches(batch_id), segment_no INTEGER NOT NULL,
+    payload_hash TEXT NOT NULL, row_count INTEGER NOT NULL,
+    first_row_no INTEGER NOT NULL, last_row_no INTEGER NOT NULL,
+    submitted_at TEXT NOT NULL,
+    PRIMARY KEY(batch_id,segment_no)
+);
+CREATE TABLE IF NOT EXISTS batch_streams (
+    batch_id TEXT PRIMARY KEY REFERENCES batches(batch_id),
+    expected_rows INTEGER, expected_payload_hash TEXT,
+    opened_at TEXT NOT NULL, sealed_at TEXT, abandoned_at TEXT, abandon_reason TEXT
+);
+CREATE TABLE IF NOT EXISTS pending_events (
+    batch_id TEXT NOT NULL REFERENCES batches(batch_id), row_no INTEGER NOT NULL,
+    event_id TEXT, source_id TEXT, venue_id TEXT, exhibit_id TEXT, event_at TEXT,
+    local_day TEXT, kind TEXT, value_num REAL, category TEXT, visitor_hash TEXT,
+    payload_hash TEXT NOT NULL, problem_code TEXT, problem_detail TEXT,
+    PRIMARY KEY(batch_id,row_no)
+);
+CREATE INDEX IF NOT EXISTS ix_pending_event ON pending_events(batch_id,event_id);
 CREATE TABLE IF NOT EXISTS partitions (
     venue_id TEXT NOT NULL REFERENCES venues(venue_id), local_day TEXT NOT NULL,
     generation INTEGER NOT NULL DEFAULT 0, head_id TEXT,

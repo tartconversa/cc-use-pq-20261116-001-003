@@ -35,30 +35,51 @@ class Audit:
             batch = Store.one(conn, "SELECT * FROM batches WHERE batch_id=?", (batch_id,))
             if not batch:
                 raise NotFound("batch not found")
+            stream = Store.one(conn, "SELECT * FROM batch_streams WHERE batch_id=?", (batch_id,))
             raw = Store.one(conn, "SELECT COUNT(*) AS n FROM raw_rows WHERE batch_id=?", (batch_id,))["n"]
-            accepted = Store.one(conn, "SELECT COUNT(*) AS n FROM accepted_events WHERE batch_id=?", (batch_id,))["n"]
-            rejected = Store.one(conn, "SELECT COUNT(*) AS n FROM rejected_rows WHERE batch_id=?", (batch_id,))["n"]
+            accepted = Store.one(conn, "SELECT COUNT(*) AS n FROM accepted_events WHERE batch_id=?",
+                                 (batch_id,))["n"]
+            rejected = Store.one(conn, "SELECT COUNT(*) AS n FROM rejected_rows WHERE batch_id=?",
+                                 (batch_id,))["n"]
+            pending = Store.one(conn, "SELECT COUNT(*) AS n FROM pending_events WHERE batch_id=?",
+                                (batch_id,))["n"]
+            sealed = bool(stream and stream["sealed_at"])
+            abandoned = bool(stream and stream["abandoned_at"])
             issues = []
             if raw != batch["total_rows"]:
                 issues.append("raw_count")
-            if accepted != batch["valid_rows"]:
-                issues.append("accepted_count")
-            if rejected != batch["rejected_rows"]:
-                issues.append("rejected_count")
-            if raw != accepted + rejected:
+            if raw != accepted + rejected + pending:
                 issues.append("classification_count")
+            if sealed:
+                if pending:
+                    issues.append("pending_rows_after_seal")
+                if accepted != batch["valid_rows"]:
+                    issues.append("accepted_count")
+                if rejected != batch["rejected_rows"]:
+                    issues.append("rejected_count")
+            elif abandoned:
+                if accepted or rejected:
+                    issues.append("abandoned_rows_published")
+            else:
+                if accepted or rejected:
+                    issues.append("unsealed_rows_published")
             overlap = Store.one(conn, "SELECT COUNT(*) AS n FROM accepted_events e JOIN rejected_rows r "
-                                "ON e.batch_id=r.batch_id AND e.row_no=r.row_no WHERE e.batch_id=?", (batch_id,))["n"]
+                                "ON e.batch_id=r.batch_id AND e.row_no=r.row_no WHERE e.batch_id=?",
+                                (batch_id,))["n"]
             if overlap:
                 issues.append("accepted_rejected_overlap")
             missing = Store.one(conn, "SELECT COUNT(*) AS n FROM raw_rows r LEFT JOIN accepted_events e "
                                 "ON e.batch_id=r.batch_id AND e.row_no=r.row_no LEFT JOIN rejected_rows j "
-                                "ON j.batch_id=r.batch_id AND j.row_no=r.row_no WHERE r.batch_id=? "
-                                "AND e.row_no IS NULL AND j.row_no IS NULL", (batch_id,))["n"]
+                                "ON j.batch_id=r.batch_id AND j.row_no=r.row_no "
+                                "LEFT JOIN pending_events p ON p.batch_id=r.batch_id AND p.row_no=r.row_no "
+                                "WHERE r.batch_id=? AND e.row_no IS NULL AND j.row_no IS NULL AND p.row_no IS NULL",
+                                (batch_id,))["n"]
             if missing:
                 issues.append("unclassified_raw_rows")
             return {"batch_id": batch_id, "valid": not issues, "issues": issues,
-                    "raw_rows": raw, "accepted_rows": accepted, "rejected_rows": rejected}
+                    "status": batch["status"], "sealed": sealed, "abandoned": abandoned,
+                    "raw_rows": raw, "accepted_rows": accepted, "rejected_rows": rejected,
+                    "pending_rows": pending}
 
     def venue_integrity(self, venue_id: str) -> dict:
         with self.store.transaction(write=False) as conn:

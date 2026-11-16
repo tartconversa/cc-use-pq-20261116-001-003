@@ -55,6 +55,26 @@ class ExhibitLake:
     def ingest(self, source_id: str, contract_id: str, request_key: str, events: list[object]) -> dict:
         return self.batches.ingest(source_id, contract_id, request_key, events)
 
+    def open_batch(self, source_id: str, contract_id: str, request_key: str, *,
+                   expected_rows: int | None = None, expected_payload_hash: str | None = None) -> dict:
+        return self.batches.open(source_id, contract_id, request_key,
+                                 expected_rows=expected_rows, expected_payload_hash=expected_payload_hash)
+
+    def append_segment(self, batch_id: str, segment_no: int, events: list[object]) -> dict:
+        return self.batches.append(batch_id, segment_no, events)
+
+    def seal_batch(self, batch_id: str) -> dict:
+        return self.batches.seal(batch_id)
+
+    def abandon_batch(self, batch_id: str, reason: str | None = None) -> dict:
+        return self.batches.abandon(batch_id, reason)
+
+    def batch_pending(self, batch_id: str) -> dict:
+        return self.batches.pending(batch_id)
+
+    def unfinished_batches(self, source_id: str | None = None) -> dict:
+        return self.batches.unfinished(source_id)
+
     def publish_day(self, venue_id: str, local_day: str, expected_head: str | None = None) -> dict:
         staged = self.snapshots.stage(venue_id, local_day, expected_head)
         return self.snapshots.publish(staged["snapshot_id"], expected_head)
